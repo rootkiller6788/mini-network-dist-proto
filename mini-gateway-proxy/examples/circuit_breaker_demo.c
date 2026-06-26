@@ -141,7 +141,6 @@ static void demo_cascading_failure_prevention(void)
     CBCircuit *cb_db = cb_init("database", 5, 3, 5000);
     CBCircuit *cb_cache = cb_init("cache-svc", 2, 2, 1500);
 
-    CBCircuit *services[] = {cb_auth, cb_db, cb_cache};
     const char *names[] = {"auth-svc", "database", "cache-svc"};
 
     /* simulate: auth succeeds, database starts failing, cache healthy */
@@ -206,7 +205,7 @@ int main(void)
     printf("============================================\n");
     printf("Simulating backend service calls with fault injection\n");
 
-    simulation_failures = false;
+    simulate_failures = false;
     successful_call_count = 0;
     failed_call_count = 0;
 

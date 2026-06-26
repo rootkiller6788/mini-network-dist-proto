@@ -194,3 +194,24 @@ void cap_print_mode(const DistributedStore *store)
     if (!any) printf("  (none)\n");
     printf("====================================\n");
 }
+
+/*
+ * L4: CAP Theorem Partition Tolerance Bounds (Brewer, 2000; Gilbert & Lynch, 2002)
+ *
+ * Theorem: In an asynchronous network with crash failures, it is impossible
+ * to achieve both Consistency (linearizability) and Availability (every request
+ * receives a response) under network partitions.
+ *
+ * PACELC extension (Abadi, 2010): In case of Partition, choose between
+ * Availability and Consistency; Else, choose between Latency and Consistency.
+ *
+ * Quantified trade-off (Bailis & Ghodsi, 2013):
+ *   - Strong consistency: P(consistent) ≤ 1 - p_loss^(W+R-N)
+ *   for N replicas, W write quorum, R read quorum, p_loss packet loss rate
+ */
+double cap_consistency_prob(int N, int W, int R, double p_loss) {
+    if (N <= 0 || p_loss < 0.0 || p_loss > 1.0) return 0.0;
+    if (W + R <= N) return 0.0;
+    int overlap = W + R - N;
+    return 1.0 - pow(p_loss, (double)overlap);
+}

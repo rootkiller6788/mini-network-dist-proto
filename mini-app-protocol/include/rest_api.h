@@ -36,6 +36,7 @@ enum RESTStatusCode {
     REST_404_NOT_FOUND             = 404,
     REST_405_METHOD_NOT_ALLOWED    = 405,
     REST_409_CONFLICT              = 409,
+    REST_429_TOO_MANY_REQUESTS     = 429,
     REST_500_INTERNAL_SERVER_ERROR = 500,
     REST_503_SERVICE_UNAVAILABLE   = 503
 };
@@ -114,5 +115,51 @@ int     rest_uri_match(const char *pattern, const char *uri,
                        RESTParam *params, size_t *param_count,
                        size_t max_params);
 void    rest_method_name(enum RESTMethod method, char *out, size_t out_size);
+
+typedef int (*RESTMiddlewareFunc)(const RESTRequest *req, RESTResponse *resp,
+                                  void *ctx);
+
+typedef struct RESTMiddlewareNode {
+    RESTMiddlewareFunc         func;
+    void                      *ctx;
+    struct RESTMiddlewareNode *next;
+} RESTMiddlewareNode;
+
+typedef struct {
+    RESTMiddlewareNode *head;
+    RESTMiddlewareNode *tail;
+    size_t              count;
+} RESTMiddlewareChain;
+
+void    rest_middleware_chain_init(RESTMiddlewareChain *chain);
+int     rest_middleware_use(RESTMiddlewareChain *chain,
+                            RESTMiddlewareFunc func, void *ctx);
+int     rest_middleware_execute(RESTMiddlewareChain *chain,
+                                const RESTRequest *req, RESTResponse *resp);
+void    rest_middleware_chain_free(RESTMiddlewareChain *chain);
+
+int     rest_middleware_auth_basic(const RESTRequest *req, RESTResponse *resp,
+                                   void *ctx);
+int     rest_middleware_logger(const RESTRequest *req, RESTResponse *resp,
+                               void *ctx);
+int     rest_middleware_cors(const RESTRequest *req, RESTResponse *resp,
+                             void *ctx);
+int     rest_middleware_ratelimit(const RESTRequest *req, RESTResponse *resp,
+                                  void *ctx);
+
+typedef struct {
+    char     token[256];
+} RESTMiddlewareAuthCtx;
+
+typedef struct {
+    uint64_t request_count;
+} RESTMiddlewareLoggerCtx;
+
+typedef struct {
+    uint32_t max_requests;
+    uint32_t window_seconds;
+    uint32_t request_timestamps[256];
+    size_t   timestamp_count;
+} RESTMiddlewareRateLimitCtx;
 
 #endif

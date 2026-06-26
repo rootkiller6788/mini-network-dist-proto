@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int find_service(ServiceRegistry *reg, const char *service_name);
+
 int main(void) {
     printf("=== RPC Registry Demo ===\n\n");
 

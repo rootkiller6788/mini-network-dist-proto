@@ -161,8 +161,6 @@ void orset_init(ORSet *ors, int node_id)
 void ors_add(ORSet *ors, int element)
 {
     int i;
-    ORSetEntry *e;
-    char tag[ORSET_TAG_LEN];
 
     for (i = 0; i < ors->count; i++) {
         if (ors->entries[i].element == element) {
@@ -172,7 +170,7 @@ void ors_add(ORSet *ors, int element)
 
     if (ors->count >= CRDT_MAX_ELEMENTS) return;
 
-    e = &ors->entries[ors->count];
+    ORSetEntry *e = &ors->entries[ors->count];
     e->element = element;
     snprintf(e->tag, ORSET_TAG_LEN, "n%d-s%d", ors->node_id, ors->seq_counter++);
     ors->count++;
@@ -226,21 +224,20 @@ void ors_merge(ORSet *ors, const ORSet *other)
 {
     int i, j;
     bool found;
-    ORSetEntry *e;
 
     for (i = 0; i < other->count; i++) {
-        e = &other->entries[i];
+        const ORSetEntry *oe = &other->entries[i];
         found = false;
 
         for (j = 0; j < ors->count; j++) {
-            if (strcmp(ors->entries[j].tag, e->tag) == 0) {
+            if (strcmp(ors->entries[j].tag, oe->tag) == 0) {
                 found = true;
                 break;
             }
         }
 
         if (!found && ors->count < CRDT_MAX_ELEMENTS) {
-            ors->entries[ors->count] = *e;
+            ors->entries[ors->count] = *oe;
             ors->count++;
         }
     }

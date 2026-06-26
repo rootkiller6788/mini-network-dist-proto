@@ -46,7 +46,7 @@ int h2_frame_parse(const uint8_t *data, size_t len, H2FrameHeader *hdr,
                      ((uint32_t)data[7] << 8)  |
                       (uint32_t)data[8];
 
-    if (len < H2_FRAME_HEADER_SIZE + hdr->length) return -2;
+    if (len < (size_t)(H2_FRAME_HEADER_SIZE) + hdr->length) return -2;
 
     *payload     = data + H2_FRAME_HEADER_SIZE;
     *payload_len = hdr->length;
@@ -155,7 +155,7 @@ int h2_settings_exchange(H2Connection *conn)
 int h2_stream_open(H2Connection *conn, uint32_t *stream_id)
 {
     if (!conn || !stream_id) return -1;
-    if (conn->stream_count >= 256) return -2;
+    if (conn->stream_count >= H2_MAX_STREAMS) return -2;
 
     conn->last_stream_id += 2;
     *stream_id = conn->last_stream_id;
@@ -177,7 +177,7 @@ int h2_stream_close(H2Connection *conn, uint32_t stream_id)
     H2Stream *s = h2_stream_get(conn, stream_id);
     if (!s) return -2;
 
-    s->state = H2_STREAM_CLOSED;
+    s->state = H2_STREAM_TERMINATED;
     free(s->outgoing_data);
     s->outgoing_data = NULL;
     s->outgoing_len  = 0;
@@ -376,7 +376,7 @@ int h2_header_decode(H2Connection *conn, const uint8_t *data, size_t len,
         {"user-agent", ""}, {"vary", ""}, {"via", ""}, {"www-authenticate", ""}
     };
 
-    while (pos < len && block->count < 64) {
+    while (pos < len && block->count < H2_MAX_HEADER_FIELDS) {
         uint8_t first = data[pos];
         H2HeaderField *field = &block->fields[block->count];
 
@@ -499,6 +499,141 @@ int h2_send_headers(H2Connection *conn, uint32_t stream_id,
     s->headers = *headers;
 
     return 0;
+}
+
+void h2_priority_tree_init(H2PriorityTree *tree)
+{
+    if (!tree) return;
+    memset(tree, 0, sizeof(*tree));
+    tree->nodes[0].self_stream_id = 0;
+    tree->nodes[0].weight = 16;
+    tree->nodes[0].exclusive = false;
+    tree->node_count = 1;
+}
+
+int h2_priority_add(H2PriorityTree *tree, uint32_t stream_id,
+                    uint32_t parent_id, uint8_t weight, bool exclusive)
+{
+    if (!tree || tree->node_count >= H2_MAX_PRIORITY_NODES) return -1;
+    if (weight < 1) weight = 1;
+
+    H2PriorityNode *parent = h2_priority_find(tree, parent_id);
+    if (!parent) return -2;
+
+    H2PriorityNode *existing = h2_priority_find(tree, stream_id);
+    if (existing) {
+        if (exclusive && parent->child_count > 0) {
+            for (size_t i = 0; i < parent->child_count; i++) {
+                H2PriorityNode *child = h2_priority_find(tree, parent->children[i]);
+                if (child) child->parent_stream_id = stream_id;
+            }
+        }
+        existing->parent_stream_id = parent_id;
+        existing->weight = weight;
+        existing->exclusive = exclusive;
+        return 0;
+    }
+
+    H2PriorityNode *node = &tree->nodes[tree->node_count];
+    memset(node, 0, sizeof(*node));
+    node->self_stream_id = stream_id;
+    node->parent_stream_id = parent_id;
+    node->weight = weight;
+    node->exclusive = exclusive;
+
+    if (exclusive && parent->child_count > 0) {
+        for (size_t i = 0; i < parent->child_count; i++) {
+            H2PriorityNode *child = h2_priority_find(tree, parent->children[i]);
+            if (child) child->parent_stream_id = stream_id;
+            node->children[node->child_count++] = parent->children[i];
+        }
+        parent->child_count = 0;
+    }
+
+    parent->children[parent->child_count++] = stream_id;
+    tree->node_count++;
+
+    return 0;
+}
+
+H2PriorityNode *h2_priority_find(H2PriorityTree *tree, uint32_t stream_id)
+{
+    if (!tree) return NULL;
+    for (size_t i = 0; i < tree->node_count; i++) {
+        if (tree->nodes[i].self_stream_id == stream_id)
+            return &tree->nodes[i];
+    }
+    return NULL;
+}
+
+int h2_priority_remove(H2PriorityTree *tree, uint32_t stream_id)
+{
+    if (!tree) return -1;
+    if (stream_id == 0) return -2;
+
+    H2PriorityNode *node = h2_priority_find(tree, stream_id);
+    if (!node) return -3;
+
+    H2PriorityNode *parent = h2_priority_find(tree, node->parent_stream_id);
+    uint32_t grandparent_id = parent ? parent->parent_stream_id : 0;
+
+    for (size_t i = 0; i < node->child_count; i++) {
+        H2PriorityNode *child = h2_priority_find(tree, node->children[i]);
+        if (child) {
+            child->parent_stream_id = grandparent_id;
+            if (parent) {
+                parent->children[parent->child_count++] = node->children[i];
+            }
+        }
+    }
+
+    if (parent) {
+        for (size_t i = 0; i < parent->child_count; i++) {
+            if (parent->children[i] == stream_id) {
+                parent->children[i] = parent->children[parent->child_count - 1];
+                parent->child_count--;
+                break;
+            }
+        }
+    }
+
+    memset(node, 0, sizeof(*node));
+    return 0;
+}
+
+int h2_priority_allocate_bandwidth(H2PriorityTree *tree,
+                                    uint32_t parent_id,
+                                    uint32_t total_bandwidth,
+                                    uint32_t *allocations,
+                                    size_t max_allocations)
+{
+    if (!tree || !allocations) return -1;
+
+    H2PriorityNode *parent = h2_priority_find(tree, parent_id);
+    if (!parent || parent->child_count == 0) return -2;
+
+    uint32_t total_weight = 0;
+    for (size_t i = 0; i < parent->child_count; i++) {
+        H2PriorityNode *child = h2_priority_find(tree, parent->children[i]);
+        if (child) total_weight += (uint32_t)child->weight;
+    }
+
+    if (total_weight == 0) return -3;
+
+    size_t alloc_idx = 0;
+    for (size_t i = 0; i < parent->child_count && alloc_idx < max_allocations; i++) {
+        H2PriorityNode *child = h2_priority_find(tree, parent->children[i]);
+        if (!child) continue;
+
+        uint32_t share = (uint32_t)(((uint64_t)total_bandwidth * child->weight) / total_weight);
+        if (share < 1 && total_bandwidth > 0) share = 1;
+        if (alloc_idx + 1 < max_allocations) {
+            allocations[alloc_idx++] = child->self_stream_id;
+            allocations[alloc_idx++] = share;
+        }
+    }
+
+    return (int)(alloc_idx / 2);
 }
 
 int h2_send_data(H2Connection *conn, uint32_t stream_id,

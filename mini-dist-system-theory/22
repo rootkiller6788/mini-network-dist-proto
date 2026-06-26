@@ -1,0 +1,116 @@
+mkdir -p bin
+gcc -Wall -Wextra -O2 -I include -o bin/test_all tests/test_all.c src/cap_theorem.c src/time_ordering.c src/flp_impossibility.c src/crdt.c src/byzantine.c src/raft.c src/gossip.c src/snapshot.c src/dht.c src/leader_election.c -lm
+=== Running Tests ===
+bin/test_all
+
+========================================
+  mini-dist-system-theory Test Suite
+========================================
+
+--- CAP Theorem ---
+  TEST CAP CP mode rejects writes during partition ... *** PARTITION created between node 0 and node 1 ***
+*** PARTITION created between node 0 and node 2 ***
+[CP] Write REJECTED: node 0 can only reach 1/3 nodes (quorum=2)
+PASS
+  TEST CAP AP mode accepts writes during partition ... *** PARTITION created between node 0 and node 1 ***
+[AP] Write ACCEPTED locally on node 0: 'test'
+[AP] Async replicate: node 2 <- node 0: 'test'
+PASS
+  TEST CAP heal restores connectivity ... *** PARTITION created between node 0 and node 1 ***
+*** PARTITION HEALED between node 0 and node 1 ***
+[CP] Write ACCEPTED: 'after-heal' via node 0 (quorum=2)
+PASS
+
+--- Time & Ordering ---
+  TEST Lamport clock tick with received time ... PASS
+  TEST Vector clock happens-before detection ... PASS
+  TEST Hybrid Logical Clock ... PASS
+
+--- CRDTs ---
+  TEST G-Counter merge is idempotent ... PASS
+  TEST OR-Set add-wins semantics ... PASS
+  TEST LWW-Register last-writer-wins ... PASS
+
+--- Raft Consensus ---
+  TEST Raft leader election ... PASS
+  TEST Raft log replication (leader appends, replicates, commits) ... PASS
+  TEST Raft safety check ... PASS
+
+--- Gossip ---
+  TEST Gossip protocol convergence ... PASS
+  TEST Gossip state merge (newer version wins) ... PASS
+
+--- Snapshot ---
+  TEST Chandy-Lamport snapshot initiation ... PASS
+  TEST Chandy-Lamport snapshot consistency check ... PASS
+
+--- DHT ---
+  TEST Chord ring lookup ... PASS
+  TEST Consistent hashing with virtual nodes ... PASS
+
+--- Leader Election ---
+  TEST Bully algorithm elects highest priority ... PASS
+  TEST Ring algorithm election ... PASS
+
+--- Byzantine & FLP ---
+  TEST Byzantine n > 3f condition ... Condition SATISFIED: n=4 > 3*m=3 -> consensus possible
+Condition VIOLATED: n=3 <= 3*m=3 -> consensus IMPOSSIBLE
+PASS
+  TEST FLP impossibility simulation ... 
+=== FLP Consensus Run (max 50 steps) ===
+Processes: 5
+  P0 initial=0
+  P1 initial=0
+  P2 initial=1
+  P3 initial=0
+  P4 initial=1
+Starting...
+
+  P0 has no messages - broadcasting initial value 0
+  [Step 1] Message delivered: PROPOSE from P0 to P1 (value=0)
+  [Step 2] Message delivered: PROPOSE from P0 to P2 (value=0)
+  [Step 3] Message delivered: PROPOSE from P0 to P4 (value=0)
+  [Step 4] Message delivered: PROPOSE from P0 to P3 (value=0)
+  P3 decided 0 (round 1)
+  [Step 5] Message delivered: PROPOSE from P3 to P0 (value=0)
+  P4 decided 0 (round 1)
+  [Step 6] Message delivered: PROPOSE from P3 to P1 (value=0)
+  [Step 7] Message delivered: PROPOSE from P3 to P2 (value=0)
+  [Step 8] Message delivered: PROPOSE from P4 to P0 (value=0)
+  P2 decided 0 (round 1)
+  [Step 9] Message delivered: PROPOSE from P2 to P0 (value=0)
+  P1 decided 0 (round 1)
+  [Step 10] Message delivered: PROPOSE from P2 to P1 (value=0)
+  [Step 11] Message delivered: PROPOSE from P2 to P3 (value=0)
+  [Step 12] Message delivered: PROPOSE from P1 to P0 (value=0)
+  [Step 13] Message delivered: PROPOSE from P3 to P0 (value=0)
+  [Step 14] Message delivered: PROPOSE from P3 to P1 (value=0)
+  [Step 15] Message delivered: PROPOSE from P3 to P4 (value=0)
+  [Step 16] Message delivered: PROPOSE from P4 to P3 (value=0)
+  [Step 17] Message delivered: PROPOSE from P4 to P2 (value=0)
+  [Step 18] Message delivered: PROPOSE from P4 to P1 (value=0)
+  [Step 19] Message delivered: PROPOSE from P2 to P4 (value=0)
+  [Step 20] Message delivered: PROPOSE from P1 to P4 (value=0)
+  [Step 21] Message delivered: PROPOSE from P1 to P3 (value=0)
+  [Step 22] Message delivered: PROPOSE from P4 to P0 (value=0)
+  [Step 23] Message delivered: PROPOSE from P4 to P1 (value=0)
+  [Step 24] Message delivered: PROPOSE from P4 to P2 (value=0)
+  [Step 25] Message delivered: PROPOSE from P2 to P0 (value=0)
+  [Step 26] Message delivered: PROPOSE from P2 to P1 (value=0)
+  [Step 27] Message delivered: PROPOSE from P2 to P3 (value=0)
+  [Step 28] Message delivered: PROPOSE from P3 to P0 (value=0)
+  [Step 29] Message delivered: PROPOSE from P3 to P1 (value=0)
+  [Step 30] Message delivered: PROPOSE from P3 to P2 (value=0)
+  [Step 31] Message delivered: PROPOSE from P4 to P0 (value=0)
+  [Step 32] Message delivered: PROPOSE from P4 to P1 (value=0)
+  [Step 33] Message delivered: PROPOSE from P3 to P0 (value=0)
+  [Step 34] Message delivered: PROPOSE from P2 to P0 (value=0)
+  [Step 35] Message delivered: PROPOSE from P2 to P1 (value=0)
+  P0 decided 0 (round 1)
+=== Consensus reached in 35 steps! ===
+PASS
+
+========================================
+  Results: 22 passed, 0 failed
+========================================
+

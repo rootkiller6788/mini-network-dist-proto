@@ -506,6 +506,199 @@ int mqtt_broker_subscribe(MQTTBroker *broker, const char *client_id,
     return -2;
 }
 
+void mqtt_qos_manager_init(MQTTQoSManager *mgr)
+{
+    if (!mgr) return;
+    memset(mgr, 0, sizeof(*mgr));
+}
+
+static MQTTQoSTracker *mqtt_qos_find(MQTTQoSManager *mgr, uint16_t packet_id)
+{
+    for (size_t i = 0; i < mgr->tracker_count; i++) {
+        if (mgr->trackers[i].packet_id == packet_id)
+            return &mgr->trackers[i];
+    }
+    return NULL;
+}
+
+int mqtt_qos_track_outgoing(MQTTQoSManager *mgr, uint16_t packet_id,
+                             enum MQTTQoS qos, const char *topic,
+                             const uint8_t *payload, size_t payload_len,
+                             bool retain)
+{
+    if (!mgr || !topic) return -1;
+    if (qos == MQTT_QOS_0) return 0;
+    if (mgr->tracker_count >= 64) return -2;
+
+    MQTTQoSTracker *t = &mgr->trackers[mgr->tracker_count];
+    memset(t, 0, sizeof(*t));
+    t->packet_id = packet_id;
+    t->qos       = qos;
+    t->state     = (qos == MQTT_QOS_1) ? MQTT_QOS_STATE_AWAITING_PUBACK
+                                       : MQTT_QOS_STATE_AWAITING_PUBREC;
+    t->payload_len = payload_len;
+    t->payload     = (uint8_t *)malloc(payload_len);
+    if (t->payload && payload) memcpy(t->payload, payload, payload_len);
+    snprintf(t->topic, sizeof(t->topic), "%s", topic);
+    t->retain      = retain;
+    t->max_retries = 5;
+    t->retry_count = 0;
+
+    mgr->tracker_count++;
+    return 0;
+}
+
+int mqtt_qos_track_incoming(MQTTQoSManager *mgr, uint16_t packet_id,
+                             enum MQTTQoS qos, const char *topic,
+                             const uint8_t *payload, size_t payload_len,
+                             bool retain)
+{
+    if (!mgr || !topic) return -1;
+    if (qos == MQTT_QOS_0) return 0;
+    if (mgr->tracker_count >= 64) return -2;
+
+    MQTTQoSTracker *t = &mgr->trackers[mgr->tracker_count];
+    memset(t, 0, sizeof(*t));
+    t->packet_id = packet_id;
+    t->qos       = qos;
+    t->state     = (qos == MQTT_QOS_1) ? MQTT_QOS_STATE_COMPLETE
+                                       : MQTT_QOS_STATE_AWAITING_PUBREL;
+    t->payload_len = payload_len;
+    t->payload     = (uint8_t *)malloc(payload_len);
+    if (t->payload && payload) memcpy(t->payload, payload, payload_len);
+    snprintf(t->topic, sizeof(t->topic), "%s", topic);
+    t->retain      = retain;
+    t->max_retries = 5;
+
+    mgr->tracker_count++;
+    return 0;
+}
+
+int mqtt_qos_handle_puback(MQTTQoSManager *mgr, uint16_t packet_id)
+{
+    if (!mgr) return -1;
+    MQTTQoSTracker *t = mqtt_qos_find(mgr, packet_id);
+    if (!t) return -2;
+
+    if (t->state == MQTT_QOS_STATE_AWAITING_PUBACK) {
+        t->state = MQTT_QOS_STATE_COMPLETE;
+        free(t->payload);
+        t->payload = NULL;
+        return 0;
+    }
+
+    return -3;
+}
+
+int mqtt_qos_handle_pubrec(MQTTQoSManager *mgr, uint16_t packet_id)
+{
+    if (!mgr) return -1;
+    MQTTQoSTracker *t = mqtt_qos_find(mgr, packet_id);
+    if (!t) return -2;
+
+    if (t->state == MQTT_QOS_STATE_AWAITING_PUBREC) {
+        t->state = MQTT_QOS_STATE_AWAITING_PUBCOMP;
+        return 0;
+    }
+
+    return -3;
+}
+
+int mqtt_qos_handle_pubrel(MQTTQoSManager *mgr, uint16_t packet_id)
+{
+    if (!mgr) return -1;
+    MQTTQoSTracker *t = mqtt_qos_find(mgr, packet_id);
+    if (!t) return -2;
+
+    if (t->state == MQTT_QOS_STATE_AWAITING_PUBREL) {
+        t->state = MQTT_QOS_STATE_COMPLETE;
+        free(t->payload);
+        t->payload = NULL;
+        return 0;
+    }
+
+    return -3;
+}
+
+int mqtt_qos_handle_pubcomp(MQTTQoSManager *mgr, uint16_t packet_id)
+{
+    if (!mgr) return -1;
+    MQTTQoSTracker *t = mqtt_qos_find(mgr, packet_id);
+    if (!t) return -2;
+
+    if (t->state == MQTT_QOS_STATE_AWAITING_PUBCOMP) {
+        t->state = MQTT_QOS_STATE_COMPLETE;
+        free(t->payload);
+        t->payload = NULL;
+        return 0;
+    }
+
+    return -3;
+}
+
+int mqtt_qos_get_next_action(MQTTQoSManager *mgr, uint16_t *packet_id,
+                              enum MQTTPacketType *next_packet)
+{
+    if (!mgr || !packet_id || !next_packet) return -1;
+
+    for (size_t i = 0; i < mgr->tracker_count; i++) {
+        MQTTQoSTracker *t = &mgr->trackers[i];
+
+        switch (t->state) {
+        case MQTT_QOS_STATE_AWAITING_PUBACK:
+            *packet_id   = t->packet_id;
+            *next_packet = MQTT_PUBLISH;
+            t->retry_count++;
+            return 0;
+
+        case MQTT_QOS_STATE_AWAITING_PUBREC:
+            *packet_id   = t->packet_id;
+            *next_packet = MQTT_PUBLISH;
+            t->retry_count++;
+            return 0;
+
+        case MQTT_QOS_STATE_AWAITING_PUBREL:
+            *packet_id   = t->packet_id;
+            *next_packet = MQTT_PUBREL;
+            return 1;
+
+        case MQTT_QOS_STATE_AWAITING_PUBCOMP:
+            *packet_id   = t->packet_id;
+            *next_packet = MQTT_PUBREL;
+            t->retry_count++;
+            return 0;
+
+        default:
+            break;
+        }
+    }
+
+    return -2;
+}
+
+void mqtt_qos_remove(MQTTQoSManager *mgr, uint16_t packet_id)
+{
+    if (!mgr) return;
+    MQTTQoSTracker *t = mqtt_qos_find(mgr, packet_id);
+    if (!t) return;
+
+    free(t->payload);
+    t->payload = NULL;
+
+    size_t idx = (size_t)(t - mgr->trackers);
+    if (idx < mgr->tracker_count - 1) {
+        mgr->trackers[idx] = mgr->trackers[mgr->tracker_count - 1];
+    }
+    mgr->tracker_count--;
+}
+
+bool mqtt_qos_is_complete(MQTTQoSManager *mgr, uint16_t packet_id)
+{
+    if (!mgr) return false;
+    MQTTQoSTracker *t = mqtt_qos_find(mgr, packet_id);
+    return t ? (t->state == MQTT_QOS_STATE_COMPLETE) : false;
+}
+
 int mqtt_broker_handle_publish(MQTTBroker *broker, const MQTTPublish *pub,
                                char *target_clients[], size_t *count,
                                size_t max_targets)

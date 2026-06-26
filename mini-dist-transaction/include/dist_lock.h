@@ -64,4 +64,9 @@ bool redlock_release(LockManager *nodes[], int32_t node_count,
 int32_t redlock_majority(int32_t votes_for, int32_t total, int32_t quorum);
 const char *lock_state_str(LockState s);
 
+bool lock_process_wait_queue(LockManager *lm, const char *resource, int64_t now_ms);
+int32_t lock_deadlock_detect(LockManager *lm);
+double lock_contention_ratio(LockManager *lm);
+bool lock_try_upgrade(LockManager *lm, const char *resource, const char *owner, int64_t now_ms);
+
 #endif

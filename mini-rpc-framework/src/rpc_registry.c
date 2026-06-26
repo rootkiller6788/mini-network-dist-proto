@@ -1,4 +1,5 @@
 #include "rpc_registry.h"
+#include "rpc_transport.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

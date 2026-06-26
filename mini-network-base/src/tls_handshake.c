@@ -199,7 +199,6 @@ int tls_finished(TLSContext *ctx)
     }
     memcpy(ctx->finished.verify_data, ctx->finished.client_verify_data,
            TLS_FINISHED_SIZE);
-    ctx->finished.verify_data_len = TLS_FINISHED_SIZE;
     ctx->handshake_done = true;
     ctx->state = TLS_STATE_HANDSHAKE_DONE;
     fprintf(stderr, "  [TLS] Finished. Handshake complete. "

@@ -41,7 +41,7 @@ static void demo_successful_request(APIGateway *gw)
     snprintf(req.client_ip, sizeof(req.client_ip), "192.168.1.100");
     snprintf(req.auth_token, sizeof(req.auth_token), "Bearer eyJhbGciOiJI");
 
-    int ret = gateway_handle_request(gw, &req);
+    (void)gateway_handle_request(gw, &req);
     printf("  Result: status=%d, blocked=%s\n",
            req.status_code, req.blocked ? "yes" : "no");
     printf("  Response: %.*s\n",
@@ -59,7 +59,7 @@ static void demo_auth_failure(APIGateway *gw)
     snprintf(req.client_ip, sizeof(req.client_ip), "10.0.0.55");
     /* no auth token */
 
-    int ret = gateway_handle_request(gw, &req);
+    (void)gateway_handle_request(gw, &req);
     printf("  Result: status=%d, blocked=%s\n",
            req.status_code, req.blocked ? "yes" : "no");
     printf("  Expected: 401 Unauthorized\n");
@@ -86,7 +86,7 @@ static void demo_rate_limiting(APIGateway *gw)
         snprintf(r.client_ip, sizeof(r.client_ip), "192.168.1.1");
         snprintf(r.auth_token, sizeof(r.auth_token), "Bearer test123");
 
-        int ret = gateway_handle_request(gw, &r);
+        (void)gateway_handle_request(gw, &r);
         if (r.blocked) rejected++;
         else allowed++;
     }
@@ -104,7 +104,7 @@ static void demo_route_not_found(APIGateway *gw)
     snprintf(req.path, sizeof(req.path), "/nonexistent");
     snprintf(req.client_ip, sizeof(req.client_ip), "172.16.0.1");
 
-    int ret = gateway_handle_request(gw, &req);
+    (void)gateway_handle_request(gw, &req);
     printf("  Result: status=%d, blocked=%s\n",
            req.status_code, req.blocked ? "yes" : "no");
     printf("  Expected: 404 Not Found\n");
@@ -130,7 +130,7 @@ static void demo_plugin_chain(APIGateway *gw)
     printf("  Route plugins: TRANSFORM, CACHE\n");
     printf("  Execution order: LOGGING -> CORS -> TRANSFORM -> CACHE\n\n");
 
-    int ret = gateway_handle_request(gw, &req);
+    (void)gateway_handle_request(gw, &req);
     printf("  Result: status=%d\n", req.status_code);
 }
 
@@ -153,7 +153,7 @@ static void demo_circuit_breaker_integration(APIGateway *gw)
         cb_print_state(route->circuit_breaker);
     }
 
-    int ret = gateway_handle_request(gw, &req);
+    (void)gateway_handle_request(gw, &req);
     printf("  Request result: status=%d\n", req.status_code);
 }
 
@@ -168,7 +168,7 @@ static void demo_no_auth_route(APIGateway *gw)
     snprintf(req.client_ip, sizeof(req.client_ip), "8.8.8.8");
     /* no auth token needed */
 
-    int ret = gateway_handle_request(gw, &req);
+    (void)gateway_handle_request(gw, &req);
     printf("  Result: status=%d, blocked=%s\n",
            req.status_code, req.blocked ? "yes" : "no");
     printf("  /products GET is public (auth_required=false)\n");

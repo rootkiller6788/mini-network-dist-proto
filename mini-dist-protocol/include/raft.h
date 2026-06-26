@@ -74,4 +74,12 @@ int  raft_quorum_size(int cluster_size);
 void raft_print_state(const RaftNode *node);
 const char *raft_state_name(RaftState state);
 
+bool raft_submit_command(RaftNode *leader, RaftNode *nodes, int command_value);
+void raft_isolate_node(RaftNode *node);
+void raft_reconnect_node(RaftNode *nodes, int n, int node_id);
+int  raft_find_leader(const RaftNode *nodes, int n);
+int  raft_follower_count(const RaftNode *nodes, int n);
+int  raft_candidate_count(const RaftNode *nodes, int n);
+bool raft_quorum_active(const RaftNode *nodes, int n);
+
 #endif

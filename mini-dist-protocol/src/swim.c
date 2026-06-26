@@ -102,6 +102,7 @@ bool swim_ping(SWIMCluster *cluster, int from_id, int target_id) {
 
 bool swim_ping_success(SWIMCluster *cluster, int from_id, int target_id,
                        uint64_t incarnation) {
+    (void)from_id;
     for (int i = 0; i < cluster->member_count; i++) {
         if (cluster->members[i].id == target_id) {
             cluster->members[i].last_heard_ms = cluster->protocol_time_ms;
@@ -132,6 +133,7 @@ bool swim_indirect_ping(SWIMCluster *cluster, int from_id, int suspect_id,
         indirect.incarnation  = 0;
         indirect.suspected    = false;
         indirect.changes_count = 0;
+        (void)indirect;  /* implicitly delivered in simulation */
 
         for (int j = 0; j < cluster->member_count; j++) {
             if (cluster->members[j].id == via && cluster->members[j].active) {

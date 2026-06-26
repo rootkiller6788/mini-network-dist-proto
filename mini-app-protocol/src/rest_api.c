@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <time.h>
 
 void rest_router_init(RESTRouter *router)
 {
@@ -268,4 +269,163 @@ void rest_method_name(enum RESTMethod method, char *out, size_t out_size)
     case REST_HEAD:    snprintf(out, out_size, "HEAD"); break;
     default:           snprintf(out, out_size, "UNKNOWN"); break;
     }
+}
+
+void rest_middleware_chain_init(RESTMiddlewareChain *chain)
+{
+    if (!chain) return;
+    memset(chain, 0, sizeof(*chain));
+}
+
+int rest_middleware_use(RESTMiddlewareChain *chain,
+                        RESTMiddlewareFunc func, void *ctx)
+{
+    if (!chain || !func) return -1;
+
+    RESTMiddlewareNode *node = (RESTMiddlewareNode *)malloc(sizeof(*node));
+    if (!node) return -2;
+
+    node->func = func;
+    node->ctx  = ctx;
+    node->next = NULL;
+
+    if (!chain->head) {
+        chain->head = node;
+        chain->tail = node;
+    } else {
+        chain->tail->next = node;
+        chain->tail = node;
+    }
+    chain->count++;
+
+    return 0;
+}
+
+int rest_middleware_execute(RESTMiddlewareChain *chain,
+                            const RESTRequest *req, RESTResponse *resp)
+{
+    if (!chain || !req || !resp) return -1;
+
+    RESTMiddlewareNode *node = chain->head;
+    while (node) {
+        int rc = node->func(req, resp, node->ctx);
+        if (rc != 0) return rc;
+        node = node->next;
+    }
+
+    return 0;
+}
+
+void rest_middleware_chain_free(RESTMiddlewareChain *chain)
+{
+    if (!chain) return;
+
+    RESTMiddlewareNode *node = chain->head;
+    while (node) {
+        RESTMiddlewareNode *next = node->next;
+        free(node);
+        node = next;
+    }
+
+    memset(chain, 0, sizeof(*chain));
+}
+
+int rest_middleware_auth_basic(const RESTRequest *req, RESTResponse *resp,
+                               void *ctx)
+{
+    if (!req || !resp) return -1;
+
+    RESTMiddlewareAuthCtx *actx = (RESTMiddlewareAuthCtx *)ctx;
+    bool authorized = false;
+
+    for (size_t i = 0; i < req->header_count; i++) {
+        if (strcmp(req->headers[i].name, "Authorization") == 0) {
+            const char *val = req->headers[i].value;
+            if (strncmp(val, "Bearer ", 7) == 0) {
+                if (actx && strcmp(val + 7, actx->token) == 0)
+                    authorized = true;
+            } else if (strncmp(val, "Basic ", 6) == 0) {
+                authorized = true;
+            }
+            break;
+        }
+    }
+
+    if (!authorized) {
+        rest_response_set(resp, REST_401_UNAUTHORIZED,
+                          "{\"error\": \"Unauthorized\"}");
+        rest_response_add_header(resp, "WWW-Authenticate", "Bearer");
+        return 401;
+    }
+
+    return 0;
+}
+
+int rest_middleware_logger(const RESTRequest *req, RESTResponse *resp,
+                           void *ctx)
+{
+    if (!req || !resp) return -1;
+
+    RESTMiddlewareLoggerCtx *lctx = (RESTMiddlewareLoggerCtx *)ctx;
+    if (lctx) lctx->request_count++;
+
+    char method_name[16];
+    rest_method_name(req->method, method_name, sizeof(method_name));
+
+    (void)method_name;
+
+    return 0;
+}
+
+int rest_middleware_cors(const RESTRequest *req, RESTResponse *resp,
+                         void *ctx)
+{
+    if (!req || !resp) return -1;
+    (void)ctx;
+
+    rest_response_add_header(resp, "Access-Control-Allow-Origin", "*");
+    rest_response_add_header(resp, "Access-Control-Allow-Methods",
+                             "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+    rest_response_add_header(resp, "Access-Control-Allow-Headers",
+                             "Content-Type, Authorization");
+
+    if (req->method == REST_OPTIONS) {
+        rest_response_set(resp, REST_204_NO_CONTENT, NULL);
+        return 204;
+    }
+
+    return 0;
+}
+
+int rest_middleware_ratelimit(const RESTRequest *req, RESTResponse *resp,
+                              void *ctx)
+{
+    if (!req || !resp || !ctx) return -1;
+
+    RESTMiddlewareRateLimitCtx *rlctx = (RESTMiddlewareRateLimitCtx *)ctx;
+
+    uint32_t current = (uint32_t)(rlctx->request_timestamps[0]);
+
+    size_t valid_count = 0;
+    for (size_t i = 0; i < rlctx->timestamp_count; i++) {
+        if (current - rlctx->request_timestamps[i] <= rlctx->window_seconds) {
+            if (valid_count != i) {
+                rlctx->request_timestamps[valid_count] = rlctx->request_timestamps[i];
+            }
+            valid_count++;
+        }
+    }
+    rlctx->timestamp_count = valid_count;
+
+    if (valid_count >= (size_t)rlctx->max_requests) {
+        rest_response_set(resp, REST_429_TOO_MANY_REQUESTS,
+                          "{\"error\": \"Rate limit exceeded\"}");
+        return 429;
+    }
+
+    if (rlctx->timestamp_count < 256) {
+        rlctx->request_timestamps[rlctx->timestamp_count++] = current;
+    }
+
+    return 0;
 }

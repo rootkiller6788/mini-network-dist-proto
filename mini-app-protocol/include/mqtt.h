@@ -128,4 +128,48 @@ size_t  mqtt_encode_remaining_length(uint32_t value, uint8_t *out);
 int     mqtt_decode_remaining_length(const uint8_t *data, size_t len,
                                      uint32_t *value, size_t *consumed);
 
+enum MQTTQoSState {
+    MQTT_QOS_STATE_IDLE,
+    MQTT_QOS_STATE_AWAITING_PUBACK,
+    MQTT_QOS_STATE_AWAITING_PUBREC,
+    MQTT_QOS_STATE_AWAITING_PUBREL,
+    MQTT_QOS_STATE_AWAITING_PUBCOMP,
+    MQTT_QOS_STATE_COMPLETE
+};
+
+typedef struct {
+    uint16_t           packet_id;
+    enum MQTTQoS       qos;
+    enum MQTTQoSState  state;
+    uint8_t           *payload;
+    size_t             payload_len;
+    char               topic[MQTT_MAX_TOPIC];
+    bool               retain;
+    uint32_t           retry_count;
+    uint32_t           max_retries;
+} MQTTQoSTracker;
+
+typedef struct {
+    MQTTQoSTracker trackers[64];
+    size_t         tracker_count;
+} MQTTQoSManager;
+
+void    mqtt_qos_manager_init(MQTTQoSManager *mgr);
+int     mqtt_qos_track_outgoing(MQTTQoSManager *mgr, uint16_t packet_id,
+                                 enum MQTTQoS qos, const char *topic,
+                                 const uint8_t *payload, size_t payload_len,
+                                 bool retain);
+int     mqtt_qos_track_incoming(MQTTQoSManager *mgr, uint16_t packet_id,
+                                 enum MQTTQoS qos, const char *topic,
+                                 const uint8_t *payload, size_t payload_len,
+                                 bool retain);
+int     mqtt_qos_handle_puback(MQTTQoSManager *mgr, uint16_t packet_id);
+int     mqtt_qos_handle_pubrec(MQTTQoSManager *mgr, uint16_t packet_id);
+int     mqtt_qos_handle_pubrel(MQTTQoSManager *mgr, uint16_t packet_id);
+int     mqtt_qos_handle_pubcomp(MQTTQoSManager *mgr, uint16_t packet_id);
+int     mqtt_qos_get_next_action(MQTTQoSManager *mgr, uint16_t *packet_id,
+                                  enum MQTTPacketType *next_packet);
+void    mqtt_qos_remove(MQTTQoSManager *mgr, uint16_t packet_id);
+bool    mqtt_qos_is_complete(MQTTQoSManager *mgr, uint16_t packet_id);
+
 #endif

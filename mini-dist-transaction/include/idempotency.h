@@ -24,6 +24,7 @@ typedef struct {
     int64_t timestamp;
     IdempotentStatus status;
     char cached_result[256];
+    int32_t lru_counter;
 } IdempotentRequest;
 
 typedef struct {

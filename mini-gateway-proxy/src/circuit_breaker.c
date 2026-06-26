@@ -5,12 +5,12 @@
 
 #include "circuit_breaker.h"
 
-static uint64_t timespec_to_ms(struct timespec *ts)
+static uint64_t timespec_to_ms(const struct timespec *ts)
 {
     return (uint64_t)ts->tv_sec * 1000 + (uint64_t)ts->tv_nsec / 1000000;
 }
 
-static uint64_t elapsed_ms(struct timespec *start, struct timespec *now)
+static uint64_t elapsed_ms(const struct timespec *start, const struct timespec *now)
 {
     uint64_t start_ms = timespec_to_ms(start);
     uint64_t now_ms = timespec_to_ms(now);

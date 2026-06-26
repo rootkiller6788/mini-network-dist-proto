@@ -87,7 +87,6 @@ static void process_event(FLPSystem *sys, FLPProcess *proc)
 {
     FLPMessage msg;
     int propose_count[2] = {0, 0};
-    int i;
 
     if (!msg_dequeue(proc, &msg)) return;
 
@@ -128,8 +127,6 @@ static void process_event(FLPSystem *sys, FLPProcess *proc)
 
 bool flp_schedule_step(FLPSystem *sys)
 {
-    int start_idx;
-    int attempted;
 
     if (sys->terminated) return false;
 

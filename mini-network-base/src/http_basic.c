@@ -96,6 +96,7 @@ static int parse_request_line(const uint8_t *data, size_t len,
     return 0;
 }
 
+__attribute__((unused))
 static int parse_status_line(const uint8_t *data, size_t len,
                               size_t *pos, HTTPResponse *resp)
 {
@@ -270,7 +271,7 @@ int http_build_response(HTTPResponse *resp, uint8_t *buf, size_t *buf_len)
     written = snprintf((char*)buf + offset, *buf_len - offset, "\r\n");
     if (written < 0) return -2;
     offset += (size_t)written;
-    if ((resp->has_body || resp->body_len > 0) && resp->body) {
+    if (resp->has_body || resp->body_len > 0) {
         if (offset + resp->body_len <= *buf_len) {
             memcpy(buf + offset, resp->body, resp->body_len);
             offset += resp->body_len;
@@ -298,8 +299,8 @@ int http_chunked_decode(const uint8_t *data, size_t len,
         }
         unsigned long chunk_size = strtoul(hex, NULL, 16);
         if (chunk_size == 0) break;
-        if (*pos < len) pos++;
-        if (*pos < len && data[pos] == '\n') pos++;
+        if (pos < len) pos++;
+        if (pos < len && data[pos] == '\n') pos++;
         if (pos + chunk_size > len) return -2;
         if (out + chunk_size > *decoded_len) return -3;
         memcpy(decoded + out, data + pos, chunk_size);
